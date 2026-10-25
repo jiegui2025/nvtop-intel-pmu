@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.24)
 
-project(nvtop_intel_pmu VERSION 0.1.0 LANGUAGES C CXX)
+project(nvtop_intel_pmu VERSION 0.1.0 LANGUAGES C)
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   message(FATAL_ERROR "intel_pmu uses the Linux i915 PMU and perf_event_open")
@@ -26,6 +26,7 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  enable_language(CXX)
   include(GoogleTest)
   find_package(GTest QUIET)
   if(NOT GTest_FOUND)
@@ -45,10 +46,29 @@ if(BUILD_TESTING)
 endif()
 
 include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+set(intel_pmu_cmake_install_dir ${CMAKE_INSTALL_LIBDIR}/cmake/intel_pmu)
+configure_package_config_file(
+  cmake/intel_pmu-config.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/intel_pmu-config.cmake
+  INSTALL_DESTINATION ${intel_pmu_cmake_install_dir}
+)
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/intel_pmu-config-version.cmake
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion
+)
+
 install(TARGETS intel_pmu EXPORT intel_pmu_targets)
 install(FILES src/intel_pmu.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(EXPORT intel_pmu_targets
   FILE intel_pmu-targets.cmake
   NAMESPACE intel_pmu::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/intel_pmu
+  DESTINATION ${intel_pmu_cmake_install_dir}
+)
+install(FILES
+  ${CMAKE_CURRENT_BINARY_DIR}/intel_pmu-config.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/intel_pmu-config-version.cmake
+  DESTINATION ${intel_pmu_cmake_install_dir}
 )

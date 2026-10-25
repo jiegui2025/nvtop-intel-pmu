@@ -1,5 +1,7 @@
 # Intel i915 PMU utilization for NVTOP and Mission Center
 
+[![tests](https://github.com/jiegui2025/nvtop-intel-pmu/actions/workflows/tests.yml/badge.svg)](https://github.com/jiegui2025/nvtop-intel-pmu/actions/workflows/tests.yml)
+
 Reusable Linux i915 PMU engine-busy collection, plus tested patches for [NVTOP](https://github.com/Syllo/nvtop) and [Mission Center](https://gitlab.com/mission-center-devs/mission-center).
 
 This project addresses GPUs where the driver exposes useful `rcs*-busy`/`vcs*-busy` performance counters but DRM fdinfo has no `drm-engine-*` timestamps. In that situation NVTOP—and applications embedding it—can identify the GPU while reporting utilization as unavailable or 0%.
@@ -11,7 +13,7 @@ This project addresses GPUs where the driver exposes useful `rcs*-busy`/`vcs*-bu
 - `src/intel_pmu.c` and `src/intel_pmu.h`: standalone C module for other monitoring tools.
 - `patches/nvtop-intel-pmu-utilization.patch`: NVTOP integration, documentation, and regression tests.
 - `patches/magpie-intel-pmu-changes.patch`: Mission Center 1.2.0/Magpie integration.
-- `patches/magpie-nvtop-intel-pmu-utilization.patch`: the inner NVTOP patch used by Magpie.
+- `patches/magpie-nvtop-intel-pmu-utilization.patch`: the inner NVTOP patch, provided separately for review and rebasing. It is already embedded in the outer Magpie patch and requires Magpie's existing third-party patch stack; do not apply it directly to a clean NVTOP checkout.
 - `tests/intelPmuTests.cpp`: hardware-independent counter replay tests.
 - [Installation guide](docs/INSTALL.md), [integration guide](docs/INTEGRATION.md), [compatibility notes](docs/COMPATIBILITY.md), and [validation notes](docs/VALIDATION.md).
 
@@ -30,7 +32,7 @@ The NVTOP integration maps render utilization to overall GPU utilization and vid
 
 ## Build and test the reusable module
 
-Requirements: Linux, a C11 compiler, CMake 3.18+, and a C++ compiler for tests. If GoogleTest is unavailable, CMake fetches it for the test build.
+Requirements: Linux, a C11 compiler, and CMake 3.24+. A C++ compiler is needed only when tests are enabled. If GoogleTest is unavailable, CMake fetches it for the test build.
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
@@ -38,7 +40,7 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-Other CMake projects can use `add_subdirectory()` and link `intel_pmu::intel_pmu`. The module itself has no NVTOP, KDE, or Mission Center dependency.
+Other CMake projects can use `add_subdirectory()` and link `intel_pmu::intel_pmu`. After `cmake --install`, `find_package(intel_pmu CONFIG REQUIRED)` is also supported. The module itself has no NVTOP, KDE, or Mission Center dependency.
 
 ## Apply the patches
 
@@ -55,13 +57,15 @@ git apply /path/to/nvtop-intel-pmu/patches/nvtop-intel-pmu-utilization.patch
 git apply /path/to/nvtop-intel-pmu/patches/magpie-intel-pmu-changes.patch
 ```
 
+The separately supplied inner Magpie/NVTOP patch is informational and intended for rebasing; the outer Magpie patch above already contains it. Apply the inner patch only after Magpie's existing third-party patches, not to clean upstream NVTOP.
+
 See [docs/INSTALL.md](docs/INSTALL.md) for build, installation, verification, and rollback instructions.
 
 ## Permission and security requirements
 
 System-wide i915 PMU access normally requires `CAP_PERFMON` or `CAP_SYS_ADMIN`. Without that access the module returns no utilization reading; it does not fabricate 0%.
 
-Grant capabilities only to a **root-owned binary that is not writable by an unprivileged user**. Do not set capabilities on a build tree or other user-writable executable. A small dedicated privileged helper is preferable for long-term distribution integration.
+Grant capabilities only to a **root-owned binary whose file and parent directories are not writable by an unprivileged user**. Do not set capabilities on a build tree or other user-writable executable. A small dedicated privileged helper is preferable for long-term distribution integration.
 
 ## Scope and limitations
 

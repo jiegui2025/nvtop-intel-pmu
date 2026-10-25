@@ -9,6 +9,15 @@ add_subdirectory(path/to/nvtop-intel-pmu)
 target_link_libraries(your_monitor PRIVATE intel_pmu::intel_pmu)
 ```
 
+An installed package can instead be discovered with `find_package`:
+
+```cmake
+find_package(intel_pmu CONFIG REQUIRED)
+target_link_libraries(your_monitor PRIVATE intel_pmu::intel_pmu)
+```
+
+Install with `cmake --install build --prefix /desired/prefix` and add that prefix to `CMAKE_PREFIX_PATH` when configuring the consumer. Only a C compiler is required for library-only and installed-package consumers; tests additionally require C++.
+
 For a direct source build, compile `src/intel_pmu.c` with `_GNU_SOURCE` defined and expose `src/intel_pmu.h` to the caller.
 
 ## API sequence

@@ -1,8 +1,8 @@
 diff --git a/README.markdown b/README.markdown
-index e908837..8bc1c0d 100644
+index e908837..97673c5 100644
 --- a/README.markdown
 +++ b/README.markdown
-@@ -112,8 +112,10 @@ source](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/dr
+@@ -112,8 +112,11 @@ source](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/dr
  Hence, you will need a kernel with a version greater or equal to 5.19 to see the
  processes using Intel GPUs.
  
@@ -11,7 +11,8 @@ index e908837..8bc1c0d 100644
 +On i915 GPUs, overall render and shared video utilization are also available through PMU engine-busy counters, including on GPUs whose fdinfo does not expose engine times.
 +
 +Intel requires CAP_PERFMON or CAP_SYS_ADMIN capabilities to access the total memory usage, an accurate GPU frequency, and PMU utilization counters.
-+You can run `sudo setcap cap_perfmon=ep $(which nvtop)` to grant the necessary permissions or run nvtop as root.
++After installing NVTOP as root (for example, at `/usr/local/bin/nvtop`), you can grant the necessary permission to that exact file with `sudo setcap cap_perfmon=ep /usr/local/bin/nvtop`.
++Only grant capabilities to a root-owned binary whose file and parent directories are not writable by unprivileged users; do not set them on a user-writable build output.
  
  ### NVIDIA
  

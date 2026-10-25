@@ -13,6 +13,8 @@ find /sys/bus/event_source/devices -maxdepth 3 -type f \
 
 A supported i915 device should have `rcs<N>-busy` for render utilization and may have `vcs<N>-busy` for shared video utilization. No compatible events means this patch cannot provide those readings.
 
+Whenever these instructions grant a capability, verify that the installed binary **and every parent directory** are root-owned and not writable by an unprivileged user. Standard system-owned `/usr/local/bin` satisfies this model; a customized user-writable installation prefix does not.
+
 ## NVTOP
 
 The supplied patch was validated against commit `71094a9f7dfbfe7cbe9faebfdf055e580a034283`. Applying it to a nearby revision may also work; always run `git apply --check` first.

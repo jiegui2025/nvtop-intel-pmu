@@ -49,4 +49,15 @@ For broad distribution, the safer long-term design is a small, reviewed host-sid
 
 ## Hardware coverage
 
-The implementation is generic over numbered `rcs` and `vcs` events and normalizes multiple engines. It has not yet been validated across all Intel generations or multi-GT systems. Reports for additional hardware should include successful **and** unsuccessful results, with kernel/driver details and available event names.
+The implementation has no GPU-generation allowlist. It probes numbered `rcs` and `vcs` events and normalizes multiple engines, so another older i915 GPU can use the same path **when its running kernel exposes compatible counters**. This is a capability check, not a guarantee for Sandy Bridge, Ivy Bridge, Haswell, or any other specific generation.
+
+Only Intel HD Graphics 4000 (Ivy Bridge) has been validated end to end. Other old Intel GPUs may lack the required PMU events or expose different behavior. No matching `rcs<N>-busy` event means the patch cannot provide render utilization; no `vcs<N>-busy` event means it cannot provide shared video utilization.
+
+Check the actual system with:
+
+```sh
+find /sys/bus/event_source/devices -maxdepth 3 -type f \
+  \( -name 'rcs*-busy' -o -name 'vcs*-busy' \) -print
+```
+
+Even when events exist, verify readings under a real GPU workload and compare them with an independent tool. Reports for additional hardware should include successful **and** unsuccessful results, with GPU generation, kernel/driver details, and available event names. Multi-GT systems also remain untested.

@@ -11,11 +11,37 @@ permissions:
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cmake_version: ['3.24.0', '3.31.8']
+    name: CMake ${{ matrix.cmake_version }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install CMake ${{ matrix.cmake_version }}
+        shell: bash
+        run: |
+          version="${{ matrix.cmake_version }}"
+          archive="cmake-${version}-linux-x86_64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/Kitware/CMake/releases/download/v${version}/${archive}" \
+            --output "$RUNNER_TEMP/$archive"
+          mkdir -p "$RUNNER_TEMP/cmake"
+          tar -xzf "$RUNNER_TEMP/$archive" --strip-components=1 -C "$RUNNER_TEMP/cmake"
+          echo "$RUNNER_TEMP/cmake/bin" >> "$GITHUB_PATH"
       - name: Configure
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
       - name: Build
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Install package
+        run: cmake --install build --prefix "$RUNNER_TEMP/intel-pmu-prefix"
+      - name: Configure C-only package consumer
+        run: >-
+          cmake -S tests/package-consumer -B build/package-consumer -G Ninja
+          -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/intel-pmu-prefix"
+      - name: Build and run package consumer
+        run: |
+          cmake --build build/package-consumer --parallel
+          ./build/package-consumer/intel_pmu_package_consumer

@@ -41,14 +41,16 @@ The NVTOP integration passed:
 
 The 9 new tests also passed with AddressSanitizer and UndefinedBehaviorSanitizer. The new module completed GCC `-fanalyzer` and Clang static analysis without findings.
 
+The standalone repository was also built and tested with CMake 3.24.0 and 3.31.8. A library-only build succeeded with tests disabled and no usable C++ compiler configured. Installation followed by `find_package(intel_pmu CONFIG REQUIRED)` was verified with a C-only consumer that built and ran successfully.
+
 ## Build and patch checks
 
 - Built a complete NVTOP binary at the documented upstream base.
 - Built a complete binary against Mission Center's pinned NVTOP revision.
-- Applied the Magpie inner patch after its existing third-party patch stack.
+- Applied the inner Magpie/NVTOP patch only after Magpie's existing third-party patch stack, not against clean upstream NVTOP.
 - Compiled the exact patched Intel sources used by Magpie.
 - Built Magpie 1.2.0 successfully with `cargo build --release --locked`.
-- Apply-tested both exported patch files against clean checkouts.
+- Apply-tested the NVTOP integration patch against its clean documented NVTOP base and the outer Magpie integration patch against its clean documented Magpie base.
 - Parsed the modified `nvtop.json` successfully.
 
 ## Live Mission Center verification
