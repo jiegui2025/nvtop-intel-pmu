@@ -1,0 +1,14 @@
+/build/
+/build-*/
+/Testing/
+cmake-build-*/
+CMakeUserPresets.json
+*.o
+*.a
+*.so
+*.gcda
+*.gcno
+*.profraw
+*.plist
+compile_commands.json
+.cache/
