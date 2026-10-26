@@ -1,0 +1,684 @@
+diff --git a/README.markdown b/README.markdown
+index e908837..97673c5 100644
+--- a/README.markdown
++++ b/README.markdown
+@@ -112,8 +112,11 @@ source](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/dr
+ Hence, you will need a kernel with a version greater or equal to 5.19 to see the
+ processes using Intel GPUs.
+ 
+-Intel requires CAP_PERFMON or CAP_SYS_ADMIN capabilities to access the total memory usage, and an accurate GPU frequency.
+-you can run `sudo setcap cap_perfmon=ep $(which nvtop)` to grant the necessary permissions or run nvtop as root.
++On i915 GPUs, overall render and shared video utilization are also available through PMU engine-busy counters, including on GPUs whose fdinfo does not expose engine times.
++
++Intel requires CAP_PERFMON or CAP_SYS_ADMIN capabilities to access the total memory usage, an accurate GPU frequency, and PMU utilization counters.
++After installing NVTOP as root (for example, at `/usr/local/bin/nvtop`), you can grant the necessary permission to that exact file with `sudo setcap cap_perfmon=ep /usr/local/bin/nvtop`.
++Only grant capabilities to a root-owned binary whose file and parent directories are not writable by unprivileged users; do not set them on a user-writable build output.
+ 
+ ### NVIDIA
+ 
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 83c2661..213db7e 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -141,6 +141,7 @@ endif()
+ 
+ if(INTEL_SUPPORT)
+   target_sources(nvtop PRIVATE extract_gpuinfo_intel.c)
++  target_sources(nvtop PRIVATE intel_pmu.c)
+   target_sources(nvtop PRIVATE extract_gpuinfo_intel_i915.c)
+   target_sources(nvtop PRIVATE extract_gpuinfo_intel_xe.c)
+ endif()
+diff --git a/src/extract_gpuinfo_intel.c b/src/extract_gpuinfo_intel.c
+index 5a569b4..b51f2ae 100644
+--- a/src/extract_gpuinfo_intel.c
++++ b/src/extract_gpuinfo_intel.c
+@@ -51,6 +51,10 @@ static void gpuinfo_intel_get_running_processes(struct gpu_info *_gpu_info);
+ #define PERF_EVENT_FD_NOT_OPENED (-1)
+ #define PERF_EVENT_FD_UNAVAILABLE (-2)
+ 
++// The integrated Intel GPU is always this device
++// Discrete GPU are others
++#define INTEGRATED_I915_GPU_PCI_ID "0000:00:02.0"
++
+ static long perf_event_open(struct perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags) {
+   return syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags);
+ }
+@@ -107,13 +111,22 @@ static bool measure_perf_event_by_name(const char *pmu_name, const char *event_n
+   return get_perf_event(type, config, fd);
+ }
+ 
+-static bool get_perf_event_by_gpu_info(const struct gpu_info_intel *gpu_info, const char *event_name, int *fd) {
+-  char pmu_name[32];
+-  snprintf(pmu_name, sizeof(pmu_name), gpu_info->driver == DRIVER_XE ? "xe_%s" : "i915_%s", gpu_info->base.pdev);
++static void get_pmu_name(const struct gpu_info_intel *gpu_info, char *pmu_name, size_t pmu_name_size) {
++  if (gpu_info->driver == DRIVER_I915 && strcmp(gpu_info->base.pdev, INTEGRATED_I915_GPU_PCI_ID) == 0) {
++    // The integrated i915 PMU has no PCI address suffix.
++    snprintf(pmu_name, pmu_name_size, "i915");
++  } else {
++    snprintf(pmu_name, pmu_name_size, gpu_info->driver == DRIVER_XE ? "xe_%s" : "i915_%s", gpu_info->base.pdev);
++  }
+   for (char *ch = pmu_name; *ch; ++ch) {
+     if (*ch == ':')
+       *ch = '_';
+   }
++}
++
++static bool get_perf_event_by_gpu_info(const struct gpu_info_intel *gpu_info, const char *event_name, int *fd) {
++  char pmu_name[32];
++  get_pmu_name(gpu_info, pmu_name, sizeof(pmu_name));
+   if (measure_perf_event_by_name(pmu_name, event_name, fd))
+     return true;
+   // Devices with more than one GT expose per-GT event names (e.g. actual-frequency-gt0)
+@@ -141,9 +154,6 @@ static struct gpu_info_intel *gpu_infos;
+ 
+ #define VENDOR_INTEL 0x8086
+ #define VENDOR_INTEL_STR STRINGIFY(VENDOR_INTEL)
+-// The integrated Intel GPU is always this device
+-// Discrete GPU are others
+-#define INTEGRATED_I915_GPU_PCI_ID "0000:00:02.0"
+ 
+ void init_extract_gpuinfo_intel(void) { register_gpu_vendor(&gpu_vendor_intel); }
+ 
+@@ -157,6 +167,7 @@ void gpuinfo_intel_shutdown(void) {
+       ioctl(current->perf_event_fd, PERF_EVENT_IOC_DISABLE, 0);
+       close(current->perf_event_fd);
+     }
++    intel_pmu_close(&current->engine_pmu);
+     nvtop_device_unref(current->card_device);
+     nvtop_device_unref(current->driver_device);
+   }
+@@ -195,6 +206,7 @@ static void add_intel_cards(struct nvtop_device *dev, struct list_head *devices,
+   thisGPU->driver_device = nvtop_device_ref(parent);
+   thisGPU->hwmon_device = nvtop_device_get_hwmon(thisGPU->driver_device);
+   thisGPU->perf_event_fd = PERF_EVENT_FD_NOT_OPENED;
++  intel_pmu_initialize(&thisGPU->engine_pmu);
+ 
+   const char *devname;
+   if (nvtop_device_get_devname(thisGPU->card_device, &devname) >= 0)
+@@ -320,6 +332,26 @@ void gpuinfo_intel_refresh_dynamic_info(struct gpu_info *_gpu_info) {
+ 
+   RESET_ALL(dynamic_info->valid);
+ 
++  if (!is_xe) {
++    if (!gpu_info->engine_pmu_open_attempted) {
++      char pmu_name[32];
++      get_pmu_name(gpu_info, pmu_name, sizeof(pmu_name));
++      intel_pmu_open(&gpu_info->engine_pmu, pmu_name);
++      gpu_info->engine_pmu_open_attempted = true;
++    }
++
++    struct intel_pmu_utilization utilization;
++    intel_pmu_read(&gpu_info->engine_pmu, &utilization);
++    if (utilization.valid[intel_pmu_engine_render])
++      SET_GPUINFO_DYNAMIC(dynamic_info, gpu_util_rate, utilization.percent[intel_pmu_engine_render]);
++    if (utilization.valid[intel_pmu_engine_video]) {
++      // i915 exposes a shared video engine busy counter, not separate encode
++      // and decode counters. Keep both fields consistent with fdinfo handling.
++      SET_GPUINFO_DYNAMIC(dynamic_info, encoder_rate, utilization.percent[intel_pmu_engine_video]);
++      SET_GPUINFO_DYNAMIC(dynamic_info, decoder_rate, utilization.percent[intel_pmu_engine_video]);
++    }
++  }
++
+   // We are creating new devices because the device_get_sysattr_value caches its queries
+   const char *syspath;
+   nvtop_device *card_dev_noncached = NULL;
+diff --git a/src/extract_gpuinfo_intel.h b/src/extract_gpuinfo_intel.h
+index 3436046..32421b2 100644
+--- a/src/extract_gpuinfo_intel.h
++++ b/src/extract_gpuinfo_intel.h
+@@ -1,3 +1,5 @@
++#include "intel_pmu.h"
++
+ #include <stdint.h>
+ #include <uthash.h>
+ 
+@@ -69,6 +71,9 @@ struct gpu_info_intel {
+   } energy;
+ 
+   int perf_event_fd;
++
++  struct intel_pmu engine_pmu;
++  bool engine_pmu_open_attempted;
+ };
+ 
+ extern void gpuinfo_intel_i915_refresh_dynamic_info(struct gpu_info *_gpu_info);
+diff --git a/src/intel_pmu.c b/src/intel_pmu.c
+new file mode 100644
+index 0000000..a52492b
+--- /dev/null
++++ b/src/intel_pmu.c
+@@ -0,0 +1,224 @@
++/*
++ *
++ * Copyright (C) 2026 Nvtop contributors
++ *
++ * This file is part of Nvtop.
++ *
++ * Nvtop is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * Nvtop is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with nvtop.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "intel_pmu.h"
++
++#include <dirent.h>
++#include <errno.h>
++#include <inttypes.h>
++#include <linux/perf_event.h>
++#include <sched.h>
++#include <stdio.h>
++#include <string.h>
++#include <sys/ioctl.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++
++static long perf_event_open(struct perf_event_attr *attr, pid_t pid, int cpu, int group_fd, unsigned long flags) {
++  return syscall(SYS_perf_event_open, attr, pid, cpu, group_fd, flags);
++}
++
++static bool event_name_for_prefix(const char *event_name, const char *prefix) {
++  size_t prefix_length = strlen(prefix);
++  if (strncmp(event_name, prefix, prefix_length) != 0)
++    return false;
++
++  const char *instance = event_name + prefix_length;
++  if (*instance < '0' || *instance > '9')
++    return false;
++  while (*instance >= '0' && *instance <= '9')
++    instance++;
++
++  return strcmp(instance, "-busy") == 0;
++}
++
++bool intel_pmu_event_class(const char *event_name, enum intel_pmu_engine_class *engine_class) {
++  if (event_name_for_prefix(event_name, "rcs")) {
++    *engine_class = intel_pmu_engine_render;
++    return true;
++  }
++  if (event_name_for_prefix(event_name, "vcs")) {
++    *engine_class = intel_pmu_engine_video;
++    return true;
++  }
++  return false;
++}
++
++void intel_pmu_initialize(struct intel_pmu *pmu) { memset(pmu, 0, sizeof(*pmu)); }
++
++static bool read_pmu_type(const char *pmu_name, uint32_t *type) {
++  char path[256];
++  int length = snprintf(path, sizeof(path), "/sys/bus/event_source/devices/%s/type", pmu_name);
++  if (length < 0 || (size_t)length >= sizeof(path))
++    return false;
++
++  FILE *file = fopen(path, "r");
++  if (!file)
++    return false;
++  bool success = fscanf(file, "%" SCNu32, type) == 1;
++  fclose(file);
++  return success;
++}
++
++static bool read_event_config(const char *events_path, const char *event_name, uint64_t *config) {
++  char path[512];
++  int length = snprintf(path, sizeof(path), "%s/%s", events_path, event_name);
++  if (length < 0 || (size_t)length >= sizeof(path))
++    return false;
++
++  FILE *file = fopen(path, "r");
++  if (!file)
++    return false;
++
++  char key[16];
++  bool success = fscanf(file, "%15[^=]=0x%" SCNx64, key, config) == 2 &&
++                 (strcmp(key, "config") == 0 || strcmp(key, "event") == 0);
++  fclose(file);
++  return success;
++}
++
++static int open_busy_event(uint32_t type, uint64_t config) {
++  struct perf_event_attr attr = {
++      .type = type,
++      .size = sizeof(attr),
++      .config = config,
++      .read_format = PERF_FORMAT_TOTAL_TIME_ENABLED,
++      .disabled = 1,
++  };
++
++  int cpu = sched_getcpu();
++  if (cpu < 0)
++    cpu = 0;
++  int fd = perf_event_open(&attr, -1, cpu, -1, PERF_FLAG_FD_CLOEXEC);
++  if (fd < 0)
++    return -1;
++  if (ioctl(fd, PERF_EVENT_IOC_ENABLE, 0) < 0) {
++    close(fd);
++    return -1;
++  }
++  return fd;
++}
++
++bool intel_pmu_open(struct intel_pmu *pmu, const char *pmu_name) {
++  intel_pmu_close(pmu);
++
++  char events_path[256];
++  int length = snprintf(events_path, sizeof(events_path), "/sys/bus/event_source/devices/%s/events", pmu_name);
++  if (length < 0 || (size_t)length >= sizeof(events_path))
++    return false;
++
++  uint32_t type;
++  if (!read_pmu_type(pmu_name, &type))
++    return false;
++
++  DIR *events_dir = opendir(events_path);
++  if (!events_dir)
++    return false;
++
++  struct dirent *entry;
++  while (pmu->event_count < INTEL_PMU_MAX_EVENTS && (entry = readdir(events_dir)) != NULL) {
++    enum intel_pmu_engine_class engine_class;
++    uint64_t config;
++    if (!intel_pmu_event_class(entry->d_name, &engine_class) ||
++        !read_event_config(events_path, entry->d_name, &config))
++      continue;
++
++    int fd = open_busy_event(type, config);
++    if (fd < 0)
++      continue;
++
++    pmu->events[pmu->event_count].fd = fd;
++    pmu->events[pmu->event_count].engine_class = engine_class;
++    pmu->event_count++;
++  }
++  closedir(events_dir);
++
++  return pmu->event_count > 0;
++}
++
++struct intel_pmu_sample {
++  uint64_t busy_ns;
++  uint64_t enabled_ns;
++};
++
++static bool read_sample(int fd, struct intel_pmu_sample *sample) {
++  ssize_t bytes_read;
++  do {
++    bytes_read = read(fd, sample, sizeof(*sample));
++  } while (bytes_read < 0 && errno == EINTR);
++  return bytes_read == sizeof(*sample);
++}
++
++static unsigned int usage_percent(uint64_t busy_delta_ns, uint64_t enabled_delta_ns) {
++  double exact = 100.0 * (double)busy_delta_ns / (double)enabled_delta_ns;
++  unsigned int rounded = (unsigned int)(exact + 0.5);
++  return rounded > 100 ? 100 : rounded;
++}
++
++void intel_pmu_read(struct intel_pmu *pmu, struct intel_pmu_utilization *utilization) {
++  memset(utilization, 0, sizeof(*utilization));
++
++  uint64_t current_busy[intel_pmu_engine_class_count] = {0};
++  uint64_t current_enabled[intel_pmu_engine_class_count] = {0};
++  unsigned int event_counts[intel_pmu_engine_class_count] = {0};
++  bool complete[intel_pmu_engine_class_count] = {true, true};
++
++  for (size_t i = 0; i < pmu->event_count; ++i) {
++    struct intel_pmu_event *event = &pmu->events[i];
++    struct intel_pmu_sample sample;
++    enum intel_pmu_engine_class engine_class = event->engine_class;
++    event_counts[engine_class]++;
++    if (!read_sample(event->fd, &sample)) {
++      complete[engine_class] = false;
++      continue;
++    }
++    current_busy[engine_class] += sample.busy_ns;
++    current_enabled[engine_class] += sample.enabled_ns;
++  }
++
++  for (enum intel_pmu_engine_class engine_class = 0; engine_class < intel_pmu_engine_class_count; ++engine_class) {
++    if (event_counts[engine_class] == 0 || !complete[engine_class])
++      continue;
++
++    struct intel_pmu_counter *previous = &pmu->previous[engine_class];
++    if (previous->valid && current_enabled[engine_class] > previous->enabled_ns &&
++        current_busy[engine_class] >= previous->busy_ns) {
++      uint64_t busy_delta = current_busy[engine_class] - previous->busy_ns;
++      uint64_t enabled_delta = current_enabled[engine_class] - previous->enabled_ns;
++      if (busy_delta <= enabled_delta) {
++        utilization->valid[engine_class] = true;
++        utilization->percent[engine_class] = usage_percent(busy_delta, enabled_delta);
++      }
++    }
++
++    previous->busy_ns = current_busy[engine_class];
++    previous->enabled_ns = current_enabled[engine_class];
++    previous->valid = true;
++  }
++}
++
++void intel_pmu_close(struct intel_pmu *pmu) {
++  for (size_t i = 0; i < pmu->event_count; ++i) {
++    ioctl(pmu->events[i].fd, PERF_EVENT_IOC_DISABLE, 0);
++    close(pmu->events[i].fd);
++  }
++  intel_pmu_initialize(pmu);
++}
+diff --git a/src/intel_pmu.h b/src/intel_pmu.h
+new file mode 100644
+index 0000000..1dec7e9
+--- /dev/null
++++ b/src/intel_pmu.h
+@@ -0,0 +1,75 @@
++/*
++ *
++ * Copyright (C) 2026 Nvtop contributors
++ *
++ * This file is part of Nvtop.
++ *
++ * Nvtop is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * Nvtop is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with nvtop.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#ifndef INTEL_PMU_H_
++#define INTEL_PMU_H_
++
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
++
++#define INTEL_PMU_MAX_EVENTS 32
++
++enum intel_pmu_engine_class {
++  intel_pmu_engine_render = 0,
++  intel_pmu_engine_video,
++  intel_pmu_engine_class_count,
++};
++
++struct intel_pmu_event {
++  int fd;
++  enum intel_pmu_engine_class engine_class;
++};
++
++struct intel_pmu_counter {
++  uint64_t busy_ns;
++  uint64_t enabled_ns;
++  bool valid;
++};
++
++struct intel_pmu {
++  struct intel_pmu_event events[INTEL_PMU_MAX_EVENTS];
++  size_t event_count;
++  struct intel_pmu_counter previous[intel_pmu_engine_class_count];
++};
++
++struct intel_pmu_utilization {
++  bool valid[intel_pmu_engine_class_count];
++  unsigned int percent[intel_pmu_engine_class_count];
++};
++
++// Classifies i915 render and video engine busy events (for example, rcs0-busy
++// and vcs0-busy). Other engine classes are intentionally left to fdinfo.
++bool intel_pmu_event_class(const char *event_name, enum intel_pmu_engine_class *engine_class);
++
++void intel_pmu_initialize(struct intel_pmu *pmu);
++
++// Discovers and enables all supported busy events for an i915 PMU. Opening
++// system-wide perf events normally requires CAP_PERFMON or CAP_SYS_ADMIN.
++bool intel_pmu_open(struct intel_pmu *pmu, const char *pmu_name);
++
++// Produces utilization from cumulative counter deltas. The first complete
++// sample establishes a baseline and therefore does not produce a reading.
++void intel_pmu_read(struct intel_pmu *pmu, struct intel_pmu_utilization *utilization);
++
++void intel_pmu_close(struct intel_pmu *pmu);
++
++#endif // INTEL_PMU_H_
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 894e82c..e589566 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -23,6 +23,16 @@ if (BUILD_TESTING AND GTest_FOUND)
+   target_link_libraries(interfaceTests PRIVATE testLib GTest::gtest_main)
+   gtest_discover_tests(interfaceTests)
+ 
++  add_executable(
++    intelPmuTests
++    intelPmuTests.cpp
++    ${PROJECT_SOURCE_DIR}/src/intel_pmu.c
++  )
++  target_include_directories(intelPmuTests PRIVATE ${PROJECT_SOURCE_DIR}/src)
++  target_compile_definitions(intelPmuTests PRIVATE _GNU_SOURCE)
++  target_link_libraries(intelPmuTests PRIVATE GTest::gtest_main)
++  gtest_discover_tests(intelPmuTests)
++
+   if (THOROUGH_TESTING)
+     target_compile_definitions(interfaceTests PRIVATE THOROUGH_TESTING)
+   endif()
+diff --git a/tests/intelPmuTests.cpp b/tests/intelPmuTests.cpp
+new file mode 100644
+index 0000000..cbd93dc
+--- /dev/null
++++ b/tests/intelPmuTests.cpp
+@@ -0,0 +1,202 @@
++/*
++ *
++ * Copyright (C) 2026 Nvtop contributors
++ *
++ * This file is part of Nvtop.
++ *
++ * Nvtop is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * Nvtop is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with nvtop.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include <cstdint>
++#include <vector>
++
++#include <gtest/gtest.h>
++#include <unistd.h>
++
++extern "C" {
++#include "intel_pmu.h"
++}
++
++namespace {
++
++TEST(IntelPmuEventNames, RecognizesOnlyRenderAndVideoBusyEvents) {
++  enum intel_pmu_engine_class engine_class;
++
++  ASSERT_TRUE(intel_pmu_event_class("rcs0-busy", &engine_class));
++  EXPECT_EQ(engine_class, intel_pmu_engine_render);
++  ASSERT_TRUE(intel_pmu_event_class("rcs12-busy", &engine_class));
++  EXPECT_EQ(engine_class, intel_pmu_engine_render);
++  ASSERT_TRUE(intel_pmu_event_class("vcs0-busy", &engine_class));
++  EXPECT_EQ(engine_class, intel_pmu_engine_video);
++  ASSERT_TRUE(intel_pmu_event_class("vcs3-busy", &engine_class));
++  EXPECT_EQ(engine_class, intel_pmu_engine_video);
++
++  EXPECT_FALSE(intel_pmu_event_class("bcs0-busy", &engine_class));
++  EXPECT_FALSE(intel_pmu_event_class("vecs0-busy", &engine_class));
++  EXPECT_FALSE(intel_pmu_event_class("ccs0-busy", &engine_class));
++  EXPECT_FALSE(intel_pmu_event_class("rcs0-wait", &engine_class));
++  EXPECT_FALSE(intel_pmu_event_class("rcs-busy", &engine_class));
++  EXPECT_FALSE(intel_pmu_event_class("vcs0-busy.unit", &engine_class));
++  EXPECT_FALSE(intel_pmu_event_class("not-rcs0-busy", &engine_class));
++}
++
++class IntelPmuReadTest : public testing::Test {
++protected:
++  void SetUp() override { intel_pmu_initialize(&pmu); }
++
++  void TearDown() override {
++    intel_pmu_close(&pmu);
++    for (int fd : write_fds)
++      close(fd);
++  }
++
++  void add_event(enum intel_pmu_engine_class engine_class) {
++    ASSERT_LT(pmu.event_count, INTEL_PMU_MAX_EVENTS);
++    int fds[2];
++    ASSERT_EQ(pipe(fds), 0);
++    pmu.events[pmu.event_count].fd = fds[0];
++    pmu.events[pmu.event_count].engine_class = engine_class;
++    pmu.event_count++;
++    write_fds.push_back(fds[1]);
++  }
++
++  void write_sample(size_t event_index, uint64_t busy_ns, uint64_t enabled_ns) {
++    ASSERT_LT(event_index, write_fds.size());
++    const uint64_t sample[] = {busy_ns, enabled_ns};
++    ASSERT_EQ(write(write_fds[event_index], sample, sizeof(sample)), sizeof(sample));
++  }
++
++  struct intel_pmu pmu;
++  struct intel_pmu_utilization utilization;
++  std::vector<int> write_fds;
++};
++
++TEST_F(IntelPmuReadTest, FirstSampleEstablishesBaseline) {
++  add_event(intel_pmu_engine_render);
++
++  write_sample(0, 100, 1000);
++  intel_pmu_read(&pmu, &utilization);
++  EXPECT_FALSE(utilization.valid[intel_pmu_engine_render]);
++
++  write_sample(0, 250, 2000);
++  intel_pmu_read(&pmu, &utilization);
++  ASSERT_TRUE(utilization.valid[intel_pmu_engine_render]);
++  EXPECT_EQ(utilization.percent[intel_pmu_engine_render], 15);
++  EXPECT_FALSE(utilization.valid[intel_pmu_engine_video]);
++}
++
++TEST_F(IntelPmuReadTest, IdleEngineProducesZeroInsteadOfMissingData) {
++  add_event(intel_pmu_engine_render);
++
++  write_sample(0, 100, 1000);
++  intel_pmu_read(&pmu, &utilization);
++  write_sample(0, 100, 2000);
++  intel_pmu_read(&pmu, &utilization);
++
++  ASSERT_TRUE(utilization.valid[intel_pmu_engine_render]);
++  EXPECT_EQ(utilization.percent[intel_pmu_engine_render], 0);
++}
++
++TEST_F(IntelPmuReadTest, NormalizesAcrossMultipleEngines) {
++  add_event(intel_pmu_engine_render);
++  add_event(intel_pmu_engine_render);
++
++  write_sample(0, 100, 1000);
++  write_sample(1, 500, 4000);
++  intel_pmu_read(&pmu, &utilization);
++
++  write_sample(0, 400, 3000);
++  write_sample(1, 1000, 6000);
++  intel_pmu_read(&pmu, &utilization);
++
++  ASSERT_TRUE(utilization.valid[intel_pmu_engine_render]);
++  EXPECT_EQ(utilization.percent[intel_pmu_engine_render], 20);
++}
++
++TEST_F(IntelPmuReadTest, ReportsVideoIndependentlyFromRender) {
++  add_event(intel_pmu_engine_video);
++
++  write_sample(0, 0, 1000);
++  intel_pmu_read(&pmu, &utilization);
++  write_sample(0, 500, 3000);
++  intel_pmu_read(&pmu, &utilization);
++
++  EXPECT_FALSE(utilization.valid[intel_pmu_engine_render]);
++  ASSERT_TRUE(utilization.valid[intel_pmu_engine_video]);
++  EXPECT_EQ(utilization.percent[intel_pmu_engine_video], 25);
++}
++
++TEST_F(IntelPmuReadTest, CounterResetStartsANewBaseline) {
++  add_event(intel_pmu_engine_render);
++
++  write_sample(0, 1000, 5000);
++  intel_pmu_read(&pmu, &utilization);
++  write_sample(0, 100, 6000);
++  intel_pmu_read(&pmu, &utilization);
++  EXPECT_FALSE(utilization.valid[intel_pmu_engine_render]);
++
++  write_sample(0, 350, 7000);
++  intel_pmu_read(&pmu, &utilization);
++  ASSERT_TRUE(utilization.valid[intel_pmu_engine_render]);
++  EXPECT_EQ(utilization.percent[intel_pmu_engine_render], 25);
++}
++
++TEST_F(IntelPmuReadTest, StalledEnabledTimeDoesNotProduceReading) {
++  add_event(intel_pmu_engine_render);
++
++  write_sample(0, 100, 1000);
++  intel_pmu_read(&pmu, &utilization);
++  write_sample(0, 200, 1000);
++  intel_pmu_read(&pmu, &utilization);
++  EXPECT_FALSE(utilization.valid[intel_pmu_engine_render]);
++
++  write_sample(0, 300, 2000);
++  intel_pmu_read(&pmu, &utilization);
++  ASSERT_TRUE(utilization.valid[intel_pmu_engine_render]);
++  EXPECT_EQ(utilization.percent[intel_pmu_engine_render], 10);
++}
++
++TEST_F(IntelPmuReadTest, BusyDeltaGreaterThanEnabledDeltaIsRejected) {
++  add_event(intel_pmu_engine_render);
++
++  write_sample(0, 0, 1000);
++  intel_pmu_read(&pmu, &utilization);
++  write_sample(0, 1500, 2000);
++  intel_pmu_read(&pmu, &utilization);
++  EXPECT_FALSE(utilization.valid[intel_pmu_engine_render]);
++
++  write_sample(0, 1600, 3000);
++  intel_pmu_read(&pmu, &utilization);
++  ASSERT_TRUE(utilization.valid[intel_pmu_engine_render]);
++  EXPECT_EQ(utilization.percent[intel_pmu_engine_render], 10);
++}
++
++TEST_F(IntelPmuReadTest, PercentagesAreRoundedAndClamped) {
++  add_event(intel_pmu_engine_render);
++
++  write_sample(0, 0, 0);
++  intel_pmu_read(&pmu, &utilization);
++  write_sample(0, 1, 3);
++  intel_pmu_read(&pmu, &utilization);
++  ASSERT_TRUE(utilization.valid[intel_pmu_engine_render]);
++  EXPECT_EQ(utilization.percent[intel_pmu_engine_render], 33);
++
++  write_sample(0, 2, 4);
++  intel_pmu_read(&pmu, &utilization);
++  ASSERT_TRUE(utilization.valid[intel_pmu_engine_render]);
++  EXPECT_EQ(utilization.percent[intel_pmu_engine_render], 100);
++}
++
++} // namespace

@@ -43,14 +43,17 @@ The 9 new tests also passed with AddressSanitizer and UndefinedBehaviorSanitizer
 
 The standalone repository was also built and tested with CMake 3.24.0 and 3.31.8. A library-only build succeeded with tests disabled and no usable C++ compiler configured. Installation followed by `find_package(intel_pmu CONFIG REQUIRED)` was verified with a C-only consumer that built and ran successfully.
 
+GitHub Actions subsequently passed the complete build, 9-test suite, installation, `find_package` consumer, and C-only `add_subdirectory` consumer on Debian 12, Ubuntu 24.04, Fedora 43, Arch Linux, and Alpine 3.22/musl. Alpine required the distribution's `linux-headers` package for `linux/perf_event.h`. These are source-portability checks, not live-hardware validations.
+
 ## Build and patch checks
 
 - Built a complete NVTOP binary at the documented upstream base.
 - Built a complete binary against Mission Center's pinned NVTOP revision.
 - Applied the inner Magpie/NVTOP patch only after Magpie's existing third-party patch stack, not against clean upstream NVTOP.
 - Compiled the exact patched Intel sources used by Magpie.
-- Built Magpie 1.2.0 successfully with `cargo build --release --locked`.
-- Apply-tested the NVTOP integration patch against its clean documented NVTOP base and the outer Magpie integration patch against its clean documented Magpie base.
+- Built Mission Center 1.2.0 Magpie successfully with `cargo build --release --locked`.
+- Rebased and built current Magpie at `17137245f30a3218ce2df0bc3c44831532c5a283`, which embeds NVTOP `71094a9f7dfbfe7cbe9faebfdf055e580a034283`, using the same locked-release build.
+- Apply-tested the NVTOP integration patch against its clean documented NVTOP base and each outer Magpie integration patch against its corresponding clean documented Magpie base.
 - Parsed the modified `nvtop.json` successfully.
 
 ## Live Mission Center verification

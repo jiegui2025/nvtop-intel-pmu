@@ -22,7 +22,7 @@ jobs:
           git -C "$RUNNER_TEMP/nvtop" apply "$GITHUB_WORKSPACE/patches/nvtop-intel-pmu-utilization.patch"
           test -f "$RUNNER_TEMP/nvtop/src/intel_pmu.c"
           test -f "$RUNNER_TEMP/nvtop/tests/intelPmuTests.cpp"
-      - name: Check Magpie patch against its clean base
+      - name: Check Mission Center 1.2.0 Magpie patch against its clean base
         shell: bash
         run: |
           git clone https://gitlab.com/mission-center-devs/gng.git "$RUNNER_TEMP/magpie"
@@ -31,3 +31,12 @@ jobs:
           git -C "$RUNNER_TEMP/magpie" apply --whitespace=nowarn "$GITHUB_WORKSPACE/patches/magpie-intel-pmu-changes.patch"
           test -f "$RUNNER_TEMP/magpie/platform-linux/3rdparty/nvtop/patches/nvtop-intel-pmu-utilization.patch"
           cmp "$GITHUB_WORKSPACE/patches/magpie-nvtop-intel-pmu-utilization.patch" "$RUNNER_TEMP/magpie/platform-linux/3rdparty/nvtop/patches/nvtop-intel-pmu-utilization.patch"
+      - name: Check current Magpie patch against its clean base
+        shell: bash
+        run: |
+          git clone https://gitlab.com/mission-center-devs/gng.git "$RUNNER_TEMP/magpie-main"
+          git -C "$RUNNER_TEMP/magpie-main" -c advice.detachedHead=false checkout 17137245f30a3218ce2df0bc3c44831532c5a283
+          git -C "$RUNNER_TEMP/magpie-main" apply --check --whitespace=nowarn "$GITHUB_WORKSPACE/patches/magpie-main-intel-pmu-changes.patch"
+          git -C "$RUNNER_TEMP/magpie-main" apply --whitespace=nowarn "$GITHUB_WORKSPACE/patches/magpie-main-intel-pmu-changes.patch"
+          test -f "$RUNNER_TEMP/magpie-main/platform-linux/3rdparty/nvtop/patches/nvtop-intel-pmu-utilization.patch"
+          cmp "$GITHUB_WORKSPACE/patches/magpie-main-nvtop-intel-pmu-utilization.patch" "$RUNNER_TEMP/magpie-main/platform-linux/3rdparty/nvtop/patches/nvtop-intel-pmu-utilization.patch"

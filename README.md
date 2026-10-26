@@ -1,6 +1,8 @@
 # Intel i915 PMU utilization for NVTOP and Mission Center
 
 [![tests](https://github.com/jiegui2025/nvtop-intel-pmu/actions/workflows/tests.yml/badge.svg)](https://github.com/jiegui2025/nvtop-intel-pmu/actions/workflows/tests.yml)
+[![distribution builds](https://github.com/jiegui2025/nvtop-intel-pmu/actions/workflows/distros.yml/badge.svg)](https://github.com/jiegui2025/nvtop-intel-pmu/actions/workflows/distros.yml)
+[![patch application](https://github.com/jiegui2025/nvtop-intel-pmu/actions/workflows/patch-applies.yml/badge.svg)](https://github.com/jiegui2025/nvtop-intel-pmu/actions/workflows/patch-applies.yml)
 
 Reusable Linux i915 PMU engine-busy collection, plus tested patches for [NVTOP](https://github.com/Syllo/nvtop) and [Mission Center](https://gitlab.com/mission-center-devs/mission-center).
 
@@ -13,9 +15,10 @@ This project addresses GPUs where the driver exposes useful `rcs*-busy`/`vcs*-bu
 - `src/intel_pmu.c` and `src/intel_pmu.h`: standalone C module for other monitoring tools.
 - `patches/nvtop-intel-pmu-utilization.patch`: NVTOP integration, documentation, and regression tests.
 - `patches/magpie-intel-pmu-changes.patch`: Mission Center 1.2.0/Magpie integration.
-- `patches/magpie-nvtop-intel-pmu-utilization.patch`: the inner NVTOP patch, provided separately for review and rebasing. It is already embedded in the outer Magpie patch and requires Magpie's existing third-party patch stack; do not apply it directly to a clean NVTOP checkout.
+- `patches/magpie-main-intel-pmu-changes.patch`: integration for current Magpie at the documented 2026-10-25 revision.
+- `patches/magpie-nvtop-intel-pmu-utilization.patch` and `patches/magpie-main-nvtop-intel-pmu-utilization.patch`: inner NVTOP patches provided separately for review and rebasing. Each is already embedded in its corresponding outer Magpie patch and requires that Magpie revision's existing third-party patch stack; do not apply either directly to a clean NVTOP checkout.
 - `tests/intelPmuTests.cpp`: hardware-independent counter replay tests.
-- [Roadmap](ROADMAP.md), [installation guide](docs/INSTALL.md), [distribution build dependencies](docs/BUILD_DEPENDENCIES.md), [integration guide](docs/INTEGRATION.md), [compatibility notes](docs/COMPATIBILITY.md), and [validation notes](docs/VALIDATION.md).
+- [Roadmap](ROADMAP.md), [upstream review packet](docs/UPSTREAM.md), [installation guide](docs/INSTALL.md), [distribution build dependencies](docs/BUILD_DEPENDENCIES.md), [integration guide](docs/INTEGRATION.md), [compatibility notes](docs/COMPATIBILITY.md), and [validation notes](docs/VALIDATION.md).
 
 ## Behavior
 
@@ -47,7 +50,8 @@ Other CMake projects can use `add_subdirectory()` and link `intel_pmu::intel_pmu
 Patch bases used during validation:
 
 - NVTOP: `71094a9f7dfbfe7cbe9faebfdf055e580a034283`
-- Mission Center Magpie: `a5272b3c1d853caa4044b737cf49257bfc4c86f2` (Mission Center 1.2.0), with NVTOP `3d4a953da02bc18886734613bb9f60ff80669de7`
+- Mission Center 1.2.0 Magpie: `a5272b3c1d853caa4044b737cf49257bfc4c86f2`, with NVTOP `3d4a953da02bc18886734613bb9f60ff80669de7`
+- Current Magpie: `17137245f30a3218ce2df0bc3c44831532c5a283`, with NVTOP `71094a9f7dfbfe7cbe9faebfdf055e580a034283`
 
 ```sh
 # In an NVTOP checkout
@@ -55,9 +59,12 @@ git apply /path/to/nvtop-intel-pmu/patches/nvtop-intel-pmu-utilization.patch
 
 # In the Magpie submodule of a Mission Center 1.2.0 checkout
 git apply /path/to/nvtop-intel-pmu/patches/magpie-intel-pmu-changes.patch
+
+# Or, in a current Magpie checkout at the documented revision
+git apply /path/to/nvtop-intel-pmu/patches/magpie-main-intel-pmu-changes.patch
 ```
 
-The separately supplied inner Magpie/NVTOP patch is informational and intended for rebasing; the outer Magpie patch above already contains it. Apply the inner patch only after Magpie's existing third-party patches, not to clean upstream NVTOP.
+The separately supplied inner Magpie/NVTOP patches are informational and intended for rebasing; each outer Magpie patch already contains its inner patch. Apply an inner patch only after the corresponding Magpie revision's existing third-party patches, not to clean upstream NVTOP.
 
 See [docs/INSTALL.md](docs/INSTALL.md) for build, installation, verification, and rollback instructions.
 

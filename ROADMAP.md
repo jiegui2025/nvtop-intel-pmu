@@ -11,20 +11,22 @@ This roadmap separates verified support from intended work. Completing a build o
 - Root-owned `/usr/local` installation and rollback documentation.
 - Standalone CMake build, C-only consumers, and `find_package` support.
 
-## Phase 1 — Portability and reproducibility (active)
+## Phase 1 — Portability and reproducibility (completed)
 
 - [x] Test CMake 3.24.0 and 3.31.8 locally and in GitHub Actions.
 - [x] Test an installed C-only `find_package` consumer.
 - [x] Run build, unit-test, `add_subdirectory`, installation, and `find_package` checks on Debian, Ubuntu, Fedora, and Arch containers.
 - [x] Add automated clean-base apply checks for the exported NVTOP and Magpie patches.
 - [x] Document distro-specific build dependencies without turning them into hardware-support claims.
-- [ ] Add a musl build/test lane if the module and test dependencies support it.
+- [x] Add a musl build/test lane if the module and test dependencies support it.
 
 **Exit criteria:** repeatable source builds and consumer checks across the documented distribution matrix, with failures and limitations recorded accurately.
 
-## Phase 2 — Upstream review
+## Phase 2 — Upstream review (active)
 
-- [ ] Prepare an upstream NVTOP issue/PR with the PMU rationale, security model, tests, and hardware evidence.
+- [x] Draft an upstream review packet with the PMU rationale, security model, tests, and hardware evidence.
+- [x] Rebase onto the documented current NVTOP and Magpie revisions and validate clean current-Magpie builds.
+- [ ] Recheck upstream heads and submit an upstream NVTOP issue/PR after submission review.
 - [ ] Discuss the Magpie integration and capability boundary with Mission Center maintainers.
 - [ ] Resolve review feedback and keep the standalone patches rebased.
 - [ ] Determine which functionality belongs in NVTOP and which belongs in downstream packaging.

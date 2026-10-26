@@ -61,7 +61,9 @@ git apply /path/to/nvtop-intel-pmu/patches/magpie-intel-pmu-changes.patch
 cargo build --release --locked
 ```
 
-The validated Magpie base is `a5272b3c1d853caa4044b737cf49257bfc4c86f2`, containing NVTOP `3d4a953da02bc18886734613bb9f60ff80669de7`.
+The validated Mission Center 1.2.0 Magpie base is `a5272b3c1d853caa4044b737cf49257bfc4c86f2`, containing NVTOP `3d4a953da02bc18886734613bb9f60ff80669de7`.
+
+For current Magpie at `17137245f30a3218ce2df0bc3c44831532c5a283`, use `patches/magpie-main-intel-pmu-changes.patch` instead. That revision contains NVTOP `71094a9f7dfbfe7cbe9faebfdf055e580a034283`; its patched source also built successfully with `cargo build --release --locked`. Do not mix the version-specific outer patches or their inner patches.
 
 On distributions where `/usr/local/bin` precedes `/usr/bin` in `PATH`, a local collector can be installed without replacing the package-owned collector:
 
