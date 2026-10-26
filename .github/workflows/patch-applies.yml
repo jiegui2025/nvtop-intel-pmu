@@ -1,0 +1,33 @@
+name: patch application
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-exported-patches:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check NVTOP patch against its clean base
+        shell: bash
+        run: |
+          git clone https://github.com/Syllo/nvtop.git "$RUNNER_TEMP/nvtop"
+          git -C "$RUNNER_TEMP/nvtop" -c advice.detachedHead=false checkout 71094a9f7dfbfe7cbe9faebfdf055e580a034283
+          git -C "$RUNNER_TEMP/nvtop" apply --check "$GITHUB_WORKSPACE/patches/nvtop-intel-pmu-utilization.patch"
+          git -C "$RUNNER_TEMP/nvtop" apply "$GITHUB_WORKSPACE/patches/nvtop-intel-pmu-utilization.patch"
+          test -f "$RUNNER_TEMP/nvtop/src/intel_pmu.c"
+          test -f "$RUNNER_TEMP/nvtop/tests/intelPmuTests.cpp"
+      - name: Check Magpie patch against its clean base
+        shell: bash
+        run: |
+          git clone https://gitlab.com/mission-center-devs/gng.git "$RUNNER_TEMP/magpie"
+          git -C "$RUNNER_TEMP/magpie" -c advice.detachedHead=false checkout a5272b3c1d853caa4044b737cf49257bfc4c86f2
+          git -C "$RUNNER_TEMP/magpie" apply --check --whitespace=nowarn "$GITHUB_WORKSPACE/patches/magpie-intel-pmu-changes.patch"
+          git -C "$RUNNER_TEMP/magpie" apply --whitespace=nowarn "$GITHUB_WORKSPACE/patches/magpie-intel-pmu-changes.patch"
+          test -f "$RUNNER_TEMP/magpie/platform-linux/3rdparty/nvtop/patches/nvtop-intel-pmu-utilization.patch"
+          cmp "$GITHUB_WORKSPACE/patches/magpie-nvtop-intel-pmu-utilization.patch" "$RUNNER_TEMP/magpie/platform-linux/3rdparty/nvtop/patches/nvtop-intel-pmu-utilization.patch"

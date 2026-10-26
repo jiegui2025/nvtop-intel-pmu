@@ -15,7 +15,7 @@ This project addresses GPUs where the driver exposes useful `rcs*-busy`/`vcs*-bu
 - `patches/magpie-intel-pmu-changes.patch`: Mission Center 1.2.0/Magpie integration.
 - `patches/magpie-nvtop-intel-pmu-utilization.patch`: the inner NVTOP patch, provided separately for review and rebasing. It is already embedded in the outer Magpie patch and requires Magpie's existing third-party patch stack; do not apply it directly to a clean NVTOP checkout.
 - `tests/intelPmuTests.cpp`: hardware-independent counter replay tests.
-- [Installation guide](docs/INSTALL.md), [integration guide](docs/INTEGRATION.md), [compatibility notes](docs/COMPATIBILITY.md), and [validation notes](docs/VALIDATION.md).
+- [Roadmap](ROADMAP.md), [installation guide](docs/INSTALL.md), [distribution build dependencies](docs/BUILD_DEPENDENCIES.md), [integration guide](docs/INTEGRATION.md), [compatibility notes](docs/COMPATIBILITY.md), and [validation notes](docs/VALIDATION.md).
 
 ## Behavior
 

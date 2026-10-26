@@ -45,3 +45,9 @@ jobs:
         run: |
           cmake --build build/package-consumer --parallel
           ./build/package-consumer/intel_pmu_package_consumer
+      - name: Configure C-only add_subdirectory consumer
+        run: cmake -S tests/add-subdirectory-consumer -B build/add-subdirectory-consumer -G Ninja -DCMAKE_CXX_COMPILER=/nonexistent
+      - name: Build and run add_subdirectory consumer
+        run: |
+          cmake --build build/add-subdirectory-consumer --parallel
+          ./build/add-subdirectory-consumer/intel_pmu_add_subdirectory_consumer

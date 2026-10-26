@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-Use the normal build dependencies for the project being patched. In addition to CMake and a C/C++ toolchain, NVTOP needs its device-discovery and UI dependencies. Magpie needs Rust/Cargo, CMake, pkg-config, and its libdrm/libudev/GBM and platform dependencies.
+Use the normal build dependencies for the project being patched. In addition to CMake and a C/C++ toolchain, NVTOP needs its device-discovery and UI dependencies. Magpie needs Rust/Cargo, CMake, pkg-config, and its libdrm/libudev/GBM and platform dependencies. See [build dependencies by distribution](BUILD_DEPENDENCIES.md) for the standalone module's CI-tested package lists.
 
 Check that the kernel exposes compatible counters before proceeding:
 

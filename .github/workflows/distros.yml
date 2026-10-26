@@ -1,0 +1,58 @@
+name: distribution builds
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-consume:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: 'debian:12'
+            setup: DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential cmake ninja-build git ca-certificates
+          - image: 'ubuntu:24.04'
+            setup: DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential cmake ninja-build git ca-certificates
+          - image: 'fedora:43'
+            setup: dnf install -y gcc gcc-c++ cmake ninja-build git ca-certificates
+          - image: 'archlinux:latest'
+            setup: pacman -Sy --noconfirm --needed base-devel cmake ninja git ca-certificates
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: ${{ matrix.setup }}
+      - name: Show toolchain versions
+        run: |
+          cmake --version
+          cc --version
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DCMAKE_DISABLE_FIND_PACKAGE_GTest=TRUE
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Install package
+        run: cmake --install build --prefix "$RUNNER_TEMP/intel-pmu-prefix"
+      - name: Configure C-only package consumer
+        run: >-
+          cmake -S tests/package-consumer -B build/package-consumer -G Ninja
+          -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/intel-pmu-prefix"
+      - name: Build and run package consumer
+        run: |
+          cmake --build build/package-consumer --parallel
+          ./build/package-consumer/intel_pmu_package_consumer
+      - name: Configure C-only add_subdirectory consumer
+        run: cmake -S tests/add-subdirectory-consumer -B build/add-subdirectory-consumer -G Ninja -DCMAKE_CXX_COMPILER=/nonexistent
+      - name: Build and run add_subdirectory consumer
+        run: |
+          cmake --build build/add-subdirectory-consumer --parallel
+          ./build/add-subdirectory-consumer/intel_pmu_add_subdirectory_consumer
