@@ -7,6 +7,7 @@ These package lists match the standalone module's distribution CI jobs. They cov
 | Debian 12 / Ubuntu 24.04 | `build-essential cmake ninja-build git ca-certificates` |
 | Fedora 43 | `gcc gcc-c++ cmake ninja-build git ca-certificates` |
 | Arch Linux / CachyOS | `base-devel cmake ninja git ca-certificates` |
+| Alpine 3.22 (musl) | `build-base cmake ninja ca-certificates linux-headers` |
 
 For Debian/Ubuntu, install with:
 
@@ -26,6 +27,12 @@ For Arch/CachyOS:
 
 ```sh
 sudo pacman -S --needed base-devel cmake ninja git ca-certificates
+```
+
+For Alpine (run package installation as root):
+
+```sh
+apk add --no-cache build-base cmake ninja ca-certificates linux-headers
 ```
 
 Use the distribution's NVTOP and Mission Center/Magpie build documentation for their additional UI, device-discovery, Rust, GBM, libdrm, libudev, and platform requirements. Downstream package names and required versions can differ from the standalone module.

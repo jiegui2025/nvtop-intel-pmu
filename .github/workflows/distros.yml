@@ -70,7 +70,7 @@ jobs:
             -v "$GITHUB_WORKSPACE:/src:ro" \
             -v "$RUNNER_TEMP/alpine-work:/work" \
             alpine:3.22 sh -eu -c '
-              apk add --no-cache build-base cmake ninja ca-certificates
+              apk add --no-cache build-base cmake ninja ca-certificates linux-headers
               cmake --version
               cmake -S /src -B /work/build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DCMAKE_DISABLE_FIND_PACKAGE_GTest=TRUE
               cmake --build /work/build --parallel
