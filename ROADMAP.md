@@ -15,9 +15,9 @@ This roadmap separates verified support from intended work. Completing a build o
 
 - [x] Test CMake 3.24.0 and 3.31.8 locally and in GitHub Actions.
 - [x] Test an installed C-only `find_package` consumer.
-- [ ] Run build, unit-test, `add_subdirectory`, installation, and `find_package` checks on Debian, Ubuntu, Fedora, and Arch containers.
-- [ ] Add automated clean-base apply checks for the exported NVTOP and Magpie patches.
-- [ ] Document distro-specific build dependencies without turning them into hardware-support claims.
+- [x] Run build, unit-test, `add_subdirectory`, installation, and `find_package` checks on Debian, Ubuntu, Fedora, and Arch containers.
+- [x] Add automated clean-base apply checks for the exported NVTOP and Magpie patches.
+- [x] Document distro-specific build dependencies without turning them into hardware-support claims.
 - [ ] Add a musl build/test lane if the module and test dependencies support it.
 
 **Exit criteria:** repeatable source builds and consumer checks across the documented distribution matrix, with failures and limitations recorded accurately.
